@@ -1,0 +1,80 @@
+https://stackoverflow.com/questions/37700730/how-do-i-configure-a-jenkins-pipeline-to-be-triggered-by-polling-subversion?rq=1
+
+https://stackoverflow.com/questions/39136459/how-to-get-svn-version-number-from-checkout-for-use-in-dsl
+
+
+
+The solution that I have found to work is:
+
+Move the pipeline script into a file (the default is JenkinsFile) and store this in the root of my project in SubVersion.
+Set my pipeline job definition source to "Pipeline script from SCM", enter the details of where to find my project in SubVersion as per a normal Jenkins build job, and set the Script Path to point at the JenkinsFile containing the pipeline script.
+Set the build trigger of the pipeline job to "Poll SCM" and enter a schedule.
+Manually run the pipeline job
+It seemed to be step 4, manually running the pipeline job that caused the poll trigger to pick up the correct repository to poll. Before that it didn't seem to know where to look.
+
+
+
+2
+down vote
+I think you need a Checkout stage before before your Build stage, which consists of the SCM information. This allows the job to Poll SCM at the desired interval and run the pipeline.
+
+You can even use Pipeline script, without having the pipeline codes to store as a JenkinsFile in SCM.
+
+Below is my SVN Checkout stage pipeline code before my Build stage:
+
+stage('Checkout') {
+    checkout([$class: 'SubversionSCM', 
+        additionalCredentials: [], 
+        excludedCommitMessages: '', 
+        excludedRegions: '', 
+        excludedRevprop: '', 
+        excludedUsers: 'buildbot', 
+        filterChangelog: false, 
+        ignoreDirPropChanges: false, 
+        includedRegions: '', 
+        locations: [[credentialsId: 'b86bc2b6-994b-4811-ac98-0f35e9a9b114', 
+            depthOption: 'infinity', 
+            ignoreExternalsOption: true, 
+            local: '.', 
+            remote: "http://svn/something/trunk/"]],
+        workspaceUpdater: [$class: 'UpdateUpdater']])
+}
+Works for my pipeline job though. Hope this helps.
+
+shareimprove this answer
+answered Nov 8 '16 at 13:15
+
+  	 	
+In your code snippet how do you get the credentialsId? – DavidA Apr 19 at 11:07
+  	 	
+Go to $(Jenkins_URL)/credentials/ and pick the ID from the list of configured credentials. – zionyx Apr 21 at 11:44 
+add a comment
+up vote
+2
+down vote
+Using a Jenkins Declarative Pipeline script, you can configure a job to poll an SVN repository URL every 10 minutes as follows:
+
+pipeline {
+    agent any
+    triggers {
+        pollSCM 'H/10 * * * *'
+    }
+    stages {
+        stage('checkout') {
+            steps {
+                checkout([$class: 'SubversionSCM', additionalCredentials: [], excludedCommitMessages: '', excludedRegions: '', excludedRevprop: '', excludedUsers: '', filterChangelog: false, ignoreDirPropChanges: false, includedRegions: '', locations: [[credentialsId: 'mySvnCredentials', depthOption: 'infinity', ignoreExternalsOption: true, local: '.', remote: 'http://example.com/svn/url/trunk']], workspaceUpdater: [$class: 'CheckoutUpdater']])
+            }
+        }
+    }
+}
+The pollSCM trigger should automatically poll all SCM Repository URLs associated with your build, including URLs specified by checkout steps, the URL of your Declarative Pipeline script from SCM, and the URL of your Global Pipeline Libraries. If you truly want the pipeline to be run for every single revision however, you'll need to set up a post-commit hook instead.
+
+
+  	 	
+Will this poll the entire pipeline stage ? – Akki Mar 24 at 20:45
+  	 	
+@Akki I believe it remembers URLs once they are executed by a step in any stage. – heenenee Mar 24 at 21:07
+  	 	
+It seems that includedRegions (haven't tested other options) is ignored when polling. No matter what includedRegions is set to any checkins to the specified locations will trigger a build. Any suggestions? – Adam Nov 11 at 1:08
+1	 	
+@Adam Based on this issue and question, it seems includedRegions is currently unsupported. A workaround would be to do a checkout on each included region separately. Outside of that, nothing obvious comes to mind. – heenenee Nov 12 at 5:10
